@@ -7,6 +7,8 @@ import os
 from PIL import Image
 import io
 import base64
+from bson import ObjectId
+from flask import jsonify
 
 # Initialize Flask app
 app = Flask(__name__)
@@ -28,7 +30,20 @@ def process_image(input_image):
 def index():
     return jsonify({'status': 'success', 'message': 'app running successfully'}), 201
 
-
+@app.route('/getusers', methods=['GET'])
+def getuser():
+    try:
+        users = users_collection.find()
+        user_list = []
+        
+        for user in users:
+            user['_id'] = str(user['_id'])  # Convert ObjectId to string
+            user_list.append(user)
+        
+        return jsonify({'status': 'success', 'data': user_list}), 200
+    except Exception as e:
+        return jsonify({'status': 'fail', 'message': str(e)}), 500
+    
 # Signup route
 @app.route('/signup', methods=['POST'])
 def signup():
@@ -53,13 +68,15 @@ def signup():
         return jsonify({'status': 'fail', 'message': str(e)}), 500
 
 # Signin route
+
 @app.route('/signin', methods=['POST'])
 def signin():
     try:
         data = request.json
         email = data['email']
         password = data['password']
-
+        print(email)
+        print(password)
         user = users_collection.find_one({'email': email})
         if user and check_password_hash(user['password'], password):
             return jsonify({'status': 'success', 'message': 'Logged in successfully'}), 200
@@ -70,19 +87,26 @@ def signin():
         return jsonify({'status': 'fail', 'message': str(e)}), 500
 
 # Image processing route
+def process_image(input_image):
+    # Convert image to grayscale
+    output_image = input_image.convert("L")
+    return output_image
+
 @app.route('/process-image', methods=['POST'])
 def process_image_route():
+    
     try:
+        # Extract email and image from the request
         email = request.form['email']
         input_image_file = request.files['image']
-
-        # Load the input image
+        print(email)
+        # Load the input image using PIL
         input_image = Image.open(input_image_file)
 
         # Process the image using the process_image function
         output_image = process_image(input_image)
 
-        # Save input and output images as bytes
+        # Save input and output images as bytes in memory
         input_image_bytes = io.BytesIO()
         output_image_bytes = io.BytesIO()
         input_image.save(input_image_bytes, format='PNG')
@@ -92,14 +116,18 @@ def process_image_route():
         input_image_str = base64.b64encode(input_image_bytes.getvalue()).decode('utf-8')
         output_image_str = base64.b64encode(output_image_bytes.getvalue()).decode('utf-8')
 
-        # Store in MongoDB
+        # Store the images and email in MongoDB
         xraydata_collection.insert_one({
             'email': email,
             'input_image': input_image_str,
             'output_image': output_image_str
         })
 
-        return jsonify({'status': 'success', 'output_image': output_image_str}), 200
+        # Prepare additional data (if any)
+        dataArray = {}
+
+        # Return the processed image and status
+        return jsonify({'status': 'success', 'output_image': output_image_str, 'data': dataArray}), 200
 
     except Exception as e:
         return jsonify({'status': 'fail', 'message': str(e)}), 500
